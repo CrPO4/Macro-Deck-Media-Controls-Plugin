@@ -55,7 +55,8 @@ jobs:
             --configuration ${{ env.CONFIGURATION }} `
             --no-restore `
             -p:EnableWindowsTargeting=true `
-            -p:Product="Your Product Name Here" `
+            -p:Product="Macro Deck Media Controls" `
+            -p:ProductVersion="${{ github.event.inputs.release_version }}" `
             -p:AssemblyVersion="${{ github.event.inputs.release_version }}" `
             -p:FileVersion="${{ github.event.inputs.release_version }}" `
             -p:InformationalVersion="${{ github.event.inputs.release_version }}" `
