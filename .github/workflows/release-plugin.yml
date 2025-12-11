@@ -1,0 +1,126 @@
+name: Build Macro Deck 2 Plugin and Release
+
+on:
+  # Trigger build-only on branch pushes
+  push:
+    branches: [main, develop]
+    tags:
+      - 'v*'
+  # Manual trigger - gives you the option to release
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create a GitHub Release with the built DLL?'
+        type: choice
+        required: true
+        default: 'no'
+        options:
+          - 'yes'
+          - 'no'
+      release_version:
+        description: 'Release version/tag (e.g., v1.0.0)'
+        required: false
+        default: ''
+
+env:
+  DOTNET_VERSION: '9.0.x'
+  SOLUTION_FILE: 'MediaControls Plugin.sln'
+  CONFIGURATION: 'Release'
+
+jobs:
+  # 1. Build the plugin (always runs)
+  build:
+    runs-on: windows-latest
+    outputs:
+      artifact_name: ${{ steps.set-artifact.outputs.name }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Patch the original project
+        run: |
+          $csprojPath = "MediaControls Plugin.csproj"
+          Write-Host "Patching the project to target .NET 9.0 and removing post-build actions."
+          $content = Get-Content $csprojPath -Raw
+          $postBuildPattern = '(?s)<Target Name="PostBuild" AfterTargets="PostBuildEvent">.*?</Target>'
+          $content = $content -replace $postBuildPattern, ''
+          $content = $content -replace '<TargetFramework>net8\.0-windows10\.0\.19041\.0</TargetFramework>', '<TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>'
+          Set-Content -Path $csprojPath -Value $content -NoNewline
+      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: |
+          dotnet restore "${{ env.SOLUTION_FILE }}" --verbosity detailed
+
+      - name: Build solution
+        run: |
+          dotnet build "${{ env.SOLUTION_FILE }}" `
+            --configuration ${{ env.CONFIGURATION }} `
+            --no-restore `
+            -p:EnableWindowsTargeting=true `
+            --verbosity minimal
+
+      - name: Upload Plugin DLL as Artifact
+        id: upload-artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MediaControls-Plugin
+          path: |
+            **/bin/${{ env.CONFIGURATION }}/**/Macro Deck Media Controls.dll
+            **/bin/${{ env.CONFIGURATION }}/**/Macro Deck Media Controls.pdb
+          retention-days: 14
+      
+      - name: Set artifact output name
+        id: set-artifact
+        run: echo "name=MediaControls-Plugin" >> $GITHUB_OUTPUT
+
+  # 2. Create a GitHub Release (only on tag push OR manual request)
+  release:
+    # Run ONLY when:
+    # 1. A tag is pushed, OR
+    # 2. Manual trigger with 'create_release: yes' is selected
+    if: |
+      startsWith(github.ref, 'refs/tags/') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'yes')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the built artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+
+      - name: Determine release tag
+        id: determine_tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # For manual trigger, use provided version or generate one
+            if [ -n "${{ github.event.inputs.release_version }}" ]; then
+              echo "tag=${{ github.event.inputs.release_version }}" >> $GITHUB_OUTPUT
+            else
+              # Generate a timestamp-based tag
+              DATE=$(date +'%Y.%m.%d-%H%M')
+              echo "tag=manual-$DATE" >> $GITHUB_OUTPUT
+            fi
+          else
+            # For tag push, use the pushed tag
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Create GitHub Release
+        id: create_release
+        uses: ncipollo/release-action@v1
+        with:
+          # Use the determined tag from the previous step
+          tag: ${{ steps.determine_tag.outputs.tag }}
+          name: Release ${{ steps.determine_tag.outputs.tag }}
+          generateReleaseNotes: true
+          artifacts: ./MediaControls-Plugin/bin/${{ env.CONFIGURATION }}/**/Macro Deck Media Controls.dll, ./MediaControls-Plugin/bin/${{ env.CONFIGURATION }}/**/Macro Deck Media Controls.pdb
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # For manual releases, allow overwriting if the same tag exists
+          allowUpdates: ${{ github.event_name == 'workflow_dispatch' }}
