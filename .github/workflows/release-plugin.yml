@@ -22,7 +22,6 @@ env:
   CONFIGURATION: 'Release'
 
 jobs:
-  # 1. Build the plugin (always runs)
   build:
     runs-on: windows-latest
     outputs:
@@ -76,11 +75,7 @@ jobs:
         id: set-artifact
         run: echo "name=MediaControls-Plugin" >> $GITHUB_OUTPUT
 
-  # 2. Create a GitHub Release (only on tag push OR manual request)
   release:
-    # Run ONLY when:
-    # 1. A tag is pushed, OR
-    # 2. Manual trigger with 'create_release: yes' is selected
     if: |
       startsWith(github.ref, 'refs/tags/') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'yes')
@@ -115,11 +110,9 @@ jobs:
         id: create_release
         uses: ncipollo/release-action@v1
         with:
-          # Use the determined tag from the previous step
           tag: ${{ steps.determine_tag.outputs.tag }}
           name: Release ${{ steps.determine_tag.outputs.tag }}
           generateReleaseNotes: true
           artifacts: ./MediaControls-Plugin/bin/${{ env.CONFIGURATION }}/**/Macro Deck Media Controls.dll, ./MediaControls-Plugin/bin/${{ env.CONFIGURATION }}/**/Macro Deck Media Controls.pdb
           token: ${{ secrets.GITHUB_TOKEN }}
-          # For manual releases, allow overwriting if the same tag exists
           allowUpdates: ${{ github.event_name == 'workflow_dispatch' }}
