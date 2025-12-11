@@ -1,26 +1,20 @@
 name: Build Macro Deck 2 Plugin and Release
 
 on:
-  # Trigger build-only on branch pushes
-  push:
-    branches: [main, develop]
-    tags:
-      - 'v*'
-  # Manual trigger - gives you the option to release
   workflow_dispatch:
     inputs:
       create_release:
         description: 'Create a GitHub Release with the built DLL?'
         type: choice
         required: true
-        default: 'no'
+        default: 'yes'
         options:
           - 'yes'
           - 'no'
       release_version:
-        description: 'Release version/tag (e.g., v1.0.0)'
-        required: false
-        default: ''
+        description: 'Release version/tag (e.g., v1.3.1)'
+        required: true
+        default: '1.3.1'
 
 env:
   DOTNET_VERSION: '9.0.x'
@@ -61,6 +55,10 @@ jobs:
             --configuration ${{ env.CONFIGURATION }} `
             --no-restore `
             -p:EnableWindowsTargeting=true `
+            -p:Product="Your Product Name Here" `
+            -p:AssemblyVersion="${{ github.event.inputs.release_version }}" `
+            -p:FileVersion="${{ github.event.inputs.release_version }}" `
+            -p:InformationalVersion="${{ github.event.inputs.release_version }}" `
             --verbosity minimal
 
       - name: Upload Plugin DLL as Artifact
